@@ -136,7 +136,7 @@ to move-rats
     ; Only move between 8:30 PM (tick 20) and 5:30 AM (tick 6) every day
     if ticks mod 24 >= 20 or ticks mod 24 <= 6 [
       rt random 360  ; Random turn
-      fd 1           ; Move forward by 1 step
+      fd 0.5           ; Move forward by 1 step
     ]
   ]
 end
@@ -465,7 +465,7 @@ mortality-rate
 mortality-rate
 0
 1
-1.0
+0.4
 0.01
 1
 NIL
