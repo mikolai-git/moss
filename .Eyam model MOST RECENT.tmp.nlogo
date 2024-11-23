@@ -8,6 +8,7 @@ population-size
   flea-infections
   human-infections
   start-date
+  target-flea-population
 
 ]
 
@@ -68,6 +69,7 @@ to setup
   set flea-infections 0
   set human-infections 0
   set start-date [1665 9 5 0]
+  set target-flea-population flea-population
 
   ;Create humans
   setup-villagers
@@ -161,9 +163,24 @@ to go
   movement-phase
   infection-phase
   update-counts
-
+  replenish-fleas
   tick
   refresh-plots
+end
+
+to replenish-fleas
+  ; Set the number of fleas to add (you can change this to any number you want)
+  let fleas-to-add 1
+
+   create-fleas fleas-to-add [
+    setxy 0 0 ;Location of package
+    set infected? true
+    set color red
+    set shape "flea"
+    set alive? true
+    find-closest-rat
+    if host = nobody [find-closest-human]
+  ]
 end
 
 to reset-infected-this-tick
@@ -176,6 +193,7 @@ to movement-phase
   ask rats [if alive? [move-rats]]
   ask humans [if alive? [move-humans]]
 end
+
 
 to move-humans
   if alive? [
@@ -227,16 +245,21 @@ end
 
 to move-fleas
   ask fleas [
-    ifelse host != nobody [
-      ifelse [alive?] of host [
-        move-to host
+    if alive? [
+      ifelse host != nobody [
+        ifelse is-turtle? host and [alive?] of host [
+          move-to host
+        ] [
+          detach-from-host
+          find-closest-rat
+          if host = nobody [find-closest-human]
+          ;if host = nobody [kill-flea] ; If no host is found, kill the flea
+        ]
       ] [
-        detach-from-host
-        find-closest-human
-        kill-flea
+        find-closest-rat
+        if host = nobody [find-closest-human]
+        ;if host = nobody [kill-flea] ; If no host is found, kill the flea
       ]
-    ] [
-      find-closest-rat
     ]
   ]
 end
@@ -272,7 +295,7 @@ end
 
 
 to find-closest-rat
-  let closest-rat min-one-of rats with [attached-fleas < 2 and alive?][distance myself]
+  let closest-rat min-one-of rats with [attached-fleas < 10 and alive?][distance myself]
   if closest-rat != nobody [
     set host closest-rat
     ask closest-rat [set attached-fleas attached-fleas + 1]
@@ -280,7 +303,7 @@ to find-closest-rat
 end
 
 to find-closest-human
-  let closest-human min-one-of humans with [attached-fleas < 2 and alive?] [distance myself]
+  let closest-human min-one-of humans with [attached-fleas < 10 and alive?] [distance myself]
   if closest-human != nobody [
     set host closest-human
     ask closest-human [set attached-fleas attached-fleas + 1]
@@ -288,7 +311,7 @@ to find-closest-human
 end
 
 to detach-from-host
-  if host != nobody [
+  if host != nobody and is-turtle? host [
     ask host [set attached-fleas attached-fleas - 1]
     set host nobody
   ]
@@ -303,33 +326,32 @@ end
 
 to flea-spread-infection
   ask fleas [
-    if ticks >  and infected? and host != nobody and [alive?] of host [
+    if infected? and host != nobody and is-turtle? host and [alive?] of host [
       ask host [
-        if not infected-this-tick? and alive? and not immune? and not infected? [  ; Only infect if not already infected this tick
+        if not infected-this-tick? and alive? and not immune? and not infected? [
           if random-float 1 < flea-transmission-rate [
             set infected-this-tick? true
-            set flea-infections flea-infections + 1
             ifelse breed = humans [
               ifelse random 2 = 1 [bubonic-infect] [pneumonic-infect]
-
+              set flea-infections flea-infections + 1
             ; Check if the host is a human
 
               ask fleas with [host = myself] [kill-flea]
             ]; Kill the flea
               [rat-infect]
-            ]
           ]
         ]
       ]
     ]
-
-
+  ]
 end
+
 
 to kill-flea
   set color gray
   set infected? false
   set alive? false
+  die  ;; Completely remove the flea from the simulation
 end
 
 
@@ -566,8 +588,8 @@ SLIDER
 flea-population
 flea-population
 0
-100
-50.0
+1000
+70.0
 1
 1
 NIL
@@ -632,7 +654,7 @@ INPUTBOX
 280
 130
 human-transmission-rate
-0.015
+0.005
 1
 0
 Number
@@ -643,7 +665,7 @@ INPUTBOX
 282
 205
 flea-transmission-rate
-0.02
+0.01
 1
 0
 Number
