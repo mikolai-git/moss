@@ -7,6 +7,8 @@ population-size
   rat-infections
   flea-infections
   human-infections
+  start-date
+
 ]
 
 ;ticks represent hours
@@ -15,16 +17,26 @@ breed [humans human]
 breed [rats rat]
 breed [fleas flea]
 
+breed [houses house]
+
+houses-own [
+  family-id
+  purpose
+]
+
 humans-own [
+  family-id
   infected?      ; if true, the turtle is infected
   infection-type ; if infected, which strain of the plague
   hours-infected ; counts how many hours the turtle has been infected
   incubation-rate; length of time that turtle is infectious (if infected)
-  attached-fleas ; number of fleas they are hosting
+  attached-fleas ;number of fleas they are hosting
+  mortality-rate;
   alive?
   immune?
   infected-this-tick? ; flag to prevent multiple infections in the same tick
   infection-completed?
+  my-home-location
 ]
 
 rats-own [
@@ -35,6 +47,7 @@ rats-own [
   alive?
   immune?
   infection-type
+  mortality-rate;
   infected-this-tick? ; flag to prevent multiple infections in the same tick
   infection-completed?
 ]
@@ -45,6 +58,8 @@ fleas-own [
   alive?
 ]
 
+links-own [family-link?]
+
 to setup
   clear-all
 
@@ -52,21 +67,13 @@ to setup
   set rat-infections 0
   set flea-infections 0
   set human-infections 0
+  set start-date [1665 9 5 0]
 
-  ; Create humans
-  create-humans population-size [
-    setxy random-xcor random-ycor
-    set infected? false
-    set infection-type "NA"
-    set incubation-rate 0
-    set hours-infected 0
-    set attached-fleas 0
-    set color green
-    set shape "person"
-    set alive? true
-    set immune? false
-    set infected-this-tick? false
-    set infection-completed? false ; Initialize infection-completed? flag
+  ;Create humans
+  setup-villagers
+
+  ask links [
+    set hidden? true
   ]
 
   ; Create rats
@@ -86,7 +93,7 @@ to setup
 
   ; Create fleas
   create-fleas flea-population [
-    setxy random-xcor random-ycor
+    setxy 0 0 ;Location of package
     set infected? true
     set color red
     set shape "flea"
@@ -95,20 +102,69 @@ to setup
     if host = nobody [find-closest-human]
   ]
 
+  create-houses 1 [
+    setxy random-xcor random-ycor
+    set purpose "church"
+    set color yellow
+  ]
+
   update-counts
   reset-ticks
   initialise-plots
 end
+
+
+to setup-villagers
+
+let new-family-id 0
+  while [count humans < population-size] [
+    set new-family-id new-family-id + 1
+    let family-size random 5 + 2
+    let family-x random-xcor
+    let family-y random-ycor
+    create-humans family-size [
+      set family-id new-family-id
+       setxy (family-x + random-float 2 - 1) (family-y + random-float 2 - 1)
+
+    set infected? false
+    set infection-type "NA"
+    set incubation-rate 0
+    set hours-infected 0
+    set attached-fleas 0
+    set color green
+    set shape "person"
+    set alive? true
+    set immune? false
+    set infected-this-tick? false
+    set infection-completed? false
+    ]
+    create-houses 1 [
+      setxy family-x family-y
+      set family-id new-family-id
+      set shape "house"
+      set purpose "home"
+  ]
+
+    ask humans with [family-id = new-family-id] [
+      create-links-with other humans with [family-id = new-family-id]
+      [set family-link? true]
+      let my-home one-of houses with [family-id = new-family-id]
+      set my-home-location my-home
+    ]
+
+  ]
+end
+
 
 to go
   reset-infected-this-tick
   movement-phase
   infection-phase
   update-counts
+
   tick
   refresh-plots
 end
-
 
 to reset-infected-this-tick
   ask humans [ set infected-this-tick? false ]
@@ -124,11 +180,39 @@ end
 to move-humans
   if alive? [
     ; Only move between 6 AM (tick 6) and 10 PM (tick 22) every day
-    if ticks mod 24 >= 6 and ticks mod 24 <= 22 [
+    ifelse ticks mod 24 >= 6 and ticks mod 24 <= 22 [
+      ;ifelse ticks mod 7 >= 1 and ticks mod 7 <= 2 [
+       ; let my-church one-of houses with [purpose = "church"]
+        ;let church-x [xcor] of my-church
+        ;let church-y [ycor] of my-church
+        ;face patch church-x church-y
+        ;move-to patch church-x church-y
+
+        ;if ticks mod 7 = 2 [
+         ;let home-x [xcor] of my-home-location
+          ;let home-y [ycor] of my-home-location
+          ;face patch home-x home-y
+          ;move-to patch home-x home-y
+
+      ;]
+      ;[
+
+
       rt random 360  ; Random turn
+
       fd 1           ; Move forward by 1 step
     ]
+
+    [
+  let home-x [xcor] of my-home-location
+  let home-y [ycor] of my-home-location
+  face patch home-x home-y
+  forward 1  ;
+
   ]
+  ]
+
+
 end
 
 to move-rats
@@ -136,7 +220,7 @@ to move-rats
     ; Only move between 8:30 PM (tick 20) and 5:30 AM (tick 6) every day
     if ticks mod 24 >= 20 or ticks mod 24 <= 6 [
       rt random 360  ; Random turn
-      fd            ; Move forward by 1 step
+      fd 0.5           ; Move forward by 1 step
     ]
   ]
 end
@@ -149,6 +233,7 @@ to move-fleas
       ] [
         detach-from-host
         find-closest-human
+        kill-flea
       ]
     ] [
       find-closest-rat
@@ -218,23 +303,27 @@ end
 
 to flea-spread-infection
   ask fleas [
-    if infected? and host != nobody and [alive?] of host [
+    if ticks >  and infected? and host != nobody and [alive?] of host [
       ask host [
         if not infected-this-tick? and alive? and not immune? and not infected? [  ; Only infect if not already infected this tick
           if random-float 1 < flea-transmission-rate [
             set infected-this-tick? true
             set flea-infections flea-infections + 1
-            ifelse random 2 = 1 [bubonic-infect] [pneumonic-infect]
+            ifelse breed = humans [
+              ifelse random 2 = 1 [bubonic-infect] [pneumonic-infect]
 
             ; Check if the host is a human
-            if [breed] of myself = humans [
-              ask myself [kill-flea]  ; Kill the flea
+
+              ask fleas with [host = myself] [kill-flea]
+            ]; Kill the flea
+              [rat-infect]
             ]
           ]
         ]
       ]
     ]
-  ]
+
+
 end
 
 to kill-flea
@@ -251,6 +340,13 @@ to human-spread-infection
       set human-infections human-infections + 1
     ]
   ]
+  ask link-neighbors with [not infected-this-tick? and alive? and not immune? and not infected?] [
+    if random-float 1 < human-transmission-rate [
+      pneumonic-infect
+      set human-infections human-infections + 1
+    ]
+  ]
+
 end
 
 to try-recover-or-die
@@ -268,6 +364,19 @@ to try-recover-or-die
   ]
 end
 
+to simulate-weather
+  ; Check for specific ticks and apply penalty or bonus accordingly
+  if ticks = 0 or ticks = 2040 or ticks = 8520 [
+    set flea-transmission-rate (flea-transmission-rate - weather-penalty)
+    set human-transmission-rate (human-transmission-rate - weather-penalty)
+  ]
+  if ticks = 4200 or ticks = 6360 [
+    set flea-transmission-rate (flea-transmission-rate + weather-penalty)
+    set human-transmission-rate (human-transmission-rate + weather-penalty)
+  ]
+end
+
+
 to update-counts
   set infected-count count humans with [infected? and alive?]
   set healthy-count count humans with [color = green]
@@ -283,6 +392,13 @@ to pneumonic-infect
   set mortality-rate 1
 end
 
+to rat-infect
+  set infected? true
+  set color red
+  set mortality-rate 0.9
+  set incubation-rate 125
+end
+
 to bubonic-infect
   set infected? true
   set infection-type "bubonic"
@@ -291,8 +407,36 @@ to bubonic-infect
   set mortality-rate 0.4
 end
 
+to-report get-datetime
+  let year item 0 start-date
+
+  let month item 1 start-date
+  let day item 2 start-date
+  let hour (item 3 start-date + ticks) mod 24
+  let days-passed floor (item 3 start-date + ticks) / 24
+
+  let new-day floor(day + days-passed)
+  let new-month month
+  let new-year year
+
+  ; Handle month overflow (assumes 30 days per month for simplicity, or use a more advanced approach below)
+  if new-day > 30 [
+    set new-month new-month + floor (new-day / 30)
+    set new-day new-day mod 30
+  ]
+  if new-month > 12 [
+    set new-year new-year + floor (new-month / 12)
+    set new-month new-month mod 12
+  ]
+
+  report (word new-year "-" new-month "-" new-day " " hour ":00")
+end
+
+
 to initialise-plots
   set-current-plot "Infection Sources"
+  clear-plot
+  set-current-plot "Deaths over Time"
   clear-plot
 end
 
@@ -304,13 +448,16 @@ to refresh-plots
   plot rat-infections
   set-current-plot-pen "Human Infections"
   plot human-infections
+  set-current-plot "Deaths over Time"
+  set-current-plot-pen "deaths"
+  plot dead-count
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
 520
 15
-1398
-894
+1401
+897
 -1
 -1
 9.0
@@ -420,67 +567,7 @@ flea-population
 flea-population
 0
 100
-46.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-320
-170
-497
-203
-bubonic-incubation
-bubonic-incubation
-48
-144
-144.0
-24
-1
-NIL
-HORIZONTAL
-
-SLIDER
-305
-220
-497
-253
-pneumonic-incubation
-pneumonic-incubation
-24
-72
-72.0
-24
-1
-NIL
-HORIZONTAL
-
-SLIDER
-310
-270
-482
-301
-mortality-rate
-mortality-rate
-0
-1
-1.0
-0.01
-1
-NIL
-HORIZONTAL
-
-SLIDER
-325
-70
-497
-103
-rat-population
-rat-population
-0
-100
-31.0
+50.0
 1
 1
 NIL
@@ -545,7 +632,7 @@ INPUTBOX
 280
 130
 human-transmission-rate
-0.2
+0.015
 1
 0
 Number
@@ -556,10 +643,65 @@ INPUTBOX
 282
 205
 flea-transmission-rate
-0.2
+0.02
 1
 0
 Number
+
+SLIDER
+330
+75
+502
+108
+rat-population
+rat-population
+0
+100
+100.0
+1
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+335
+190
+482
+250
+weather-penalty
+0.01
+1
+0
+Number
+
+PLOT
+145
+675
+345
+825
+Deaths over Time
+Time
+Deaths
+0.0
+11000.0
+0.0
+700.0
+true
+false
+"" ""
+PENS
+"deaths" 1.0 0 -16777216 true "" ""
+
+MONITOR
+1423
+267
+1576
+312
+Current Date and Time
+get-datetime
+20
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
